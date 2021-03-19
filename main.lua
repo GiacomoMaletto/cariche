@@ -10,12 +10,12 @@ local V, M = unpack(require "vector")
 
 love.mouse.setRelativeMode(true)
 love.graphics.setDefaultFilter("nearest", "nearest")
-love.graphics.setPointSize(1)
+love.graphics.setPointSize(4)
 
 local sw, sh = love.graphics.getDimensions()
 
 local camera = {}
-camera.xyz = {-2, 0, 0.5}
+camera.xyz = {-40, 0, 20}
 camera.phi = 0
 camera.theta = math.rad(90)
 function camera.dir()
@@ -34,12 +34,18 @@ function camera.mvp()
   return mvp
 end
 
-local points = {}
-local N = 10000
+local N = 200
+local points1 = {}
+local points2 = {}
+local force = {}
 for i = 1, N do
-  points[i] = {love.math.random(), love.math.random(), love.math.random()}
+  points1[i] = {love.math.random()*10, love.math.random()*10, love.math.random()*10}
+  points2[i] = {points1[i][1], points1[i][2], points1[i][3]}
+  force[i] = {0, 0, 0}
 end
-local mesh = love.graphics.newMesh({{"VertexPosition", "float", 3}}, points, "points", "stream")
+local mesh = love.graphics.newMesh({{"VertexPosition", "float", 3}}, points1, "points", "stream")
+local distance3, dx, dy, dz = 0, 0, 0, 0
+local new_i = 1
 
 function love.mousemoved(x, y, dx, dy, istouch)
   camera.phi = camera.phi - dx/200
@@ -49,6 +55,42 @@ end
 
 local dt = 1/60
 local t = 0
+
+local function update_points(p, op)
+  for i = 1, N do
+    for j = 1, i-1 do
+      dx = p[i][1] - p[j][1]
+      dy = p[i][2] - p[j][2]
+      dz = p[i][3] - p[j][3]
+      distance3 = math.pow(dx*dx + dy*dy + dz*dz, 3/2)
+      force[i][1] = force[i][1] + dx/distance3
+      force[i][2] = force[i][2] + dy/distance3
+      force[i][3] = force[i][3] + dz/distance3
+    end
+    for j = i+1, N do
+      dx = p[i][1] - p[j][1]
+      dy = p[i][2] - p[j][2]
+      dz = p[i][3] - p[j][3]
+      distance3 = math.pow(dx*dx + dy*dy + dz*dz, 3/2)
+      force[i][1] = force[i][1] + dx/distance3
+      force[i][2] = force[i][2] + dy/distance3
+      force[i][3] = force[i][3] + dz/distance3
+    end
+  end
+
+  for i = 1, N do
+    op[i][1] = 2*p[i][1] - op[i][1] + force[i][1]*0.00001
+    op[i][2] = 2*p[i][2] - op[i][2] + force[i][2]*0.00001
+    op[i][3] = 2*p[i][3] - op[i][3] + force[i][3]*0.00001
+  end
+
+  for i = 1, N do
+    distance3 = math.pow(op[i][1]*op[i][1] + op[i][2]*op[i][2] + op[i][3]*op[i][3], 1/2)
+    op[i][1] = op[i][1]/distance3*10
+    op[i][2] = op[i][2]/distance3*10
+    op[i][3] = op[i][3]/distance3*10
+  end
+end
 
 function love.update(Dt)
   dt = Dt
@@ -69,17 +111,37 @@ function love.update(Dt)
   if love.keyboard.isDown("a") then
     camera.xyz = V.add(camera.xyz, V.mul(-dt, camera.right()))
   end
-  if love.keyboard.isDown("z") then
+  if love.keyboard.isDown("space") then
     camera.xyz = V.add(camera.xyz, V.mul(dt, {0,0,1}))
   end
-  if love.keyboard.isDown("x") then
+  if love.keyboard.isDown("lctrl") then
     camera.xyz = V.add(camera.xyz, V.mul(-dt, {0,0,1}))
   end
+
+  local start = love.timer.getTime()
+
+  for i = 1, N do
+    force[i][1] = 0
+    force[i][2] = 0
+    force[i][3] = 0
+  end
+
+  new_i = 3 - new_i
+  if new_i == 1 then
+    update_points(points2, points1)
+    mesh:setVertices(points1)
+  else
+    update_points(points1, points2)
+    mesh:setVertices(points2)
+  end
+
+  local result = love.timer.getTime() - start
+  print( string.format( "It took %.3f milliseconds", result * 1000 ))
 end
 
 function love.draw()
   love.graphics.setShader(pShader)
   pShader:send("MVP", camera.mvp())
-	love.graphics.draw(mesh)
-	love.graphics.setShader()
+  love.graphics.draw(mesh)
+  love.graphics.setShader()
 end
